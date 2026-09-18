@@ -128,7 +128,11 @@ export function prepareDevelopmentProject(options: DevelopmentProjectOptions): s
   removeOwnedPath(hostLink)
   linkDirectory(options.hostDir, hostLink)
   const sharedPackages = [...new Set([...names, '@deepseek-ai/dsh', '@deepseek-ai/dsh-desktop-host'])].flatMap((name) => {
-    const manifest = readManifest(join(destinationModules, name, 'package.json'))
+    const manifestPath = join(destinationModules, name, 'package.json')
+    // Hoisted workspace links can outlive packages removed from this checkout; without a manifest
+    // they cannot join the runtime inventory even though their build-output directory still resolves.
+    if (!existsSync(manifestPath)) return []
+    const manifest = readManifest(manifestPath)
     return typeof manifest.version === 'string' ? [{ name, version: manifest.version, path: `node_modules/${name}` }] : []
   })
   const runtime: DesktopRuntimeDescriptor = { schemaVersion: 1, release: options.release,
