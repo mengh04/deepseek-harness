@@ -122,6 +122,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
     // needs a transparent window background to show through the page.
+    ...(process.platform === 'linux' ? { autoHideMenuBar: true } : {}),
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 16, y: 18 },
