@@ -1,0 +1,30 @@
+# Personal local package for DeepSeek Harness Desktop on Arch Linux x86_64.
+# Run ./build.sh from this directory after a successful package:desktop:linux:x64:dir build.
+pkgname=deepseek-harness-desktop
+pkgver=0.1.6.alpha.2
+pkgrel=1
+pkgdesc='All-plugin Cordis agent harness desktop application with bundled runtime'
+arch=(x86_64)
+url=https://github.com/deepseek-ai/deepseek-harness
+license=(MIT)
+depends=(gtk3 nss alsa-lib libcups dbus libdrm mesa libxkbcommon libxcomposite libxdamage libxrandr libxss)
+options=(!strip)
+_tarname="$pkgname-$pkgver.tar.zst"
+source=("$_tarname" "deepseek-harness-desktop.desktop")
+sha256sums=($(sha256sum "$_tarname" | awk '{print $1}') SKIP)
+
+package() {
+  install -dm755 "$pkgdir/opt/$pkgname"
+  cp -a "$srcdir/linux-unpacked/." "$pkgdir/opt/$pkgname/"
+
+  mv "$pkgdir/opt/$pkgname/@deepseek-aidsh-desktop" "$pkgdir/opt/$pkgname/$pkgname"
+  chmod 4755 "$pkgdir/opt/$pkgname/chrome-sandbox"
+
+  install -Dm755 /dev/stdin "$pkgdir/usr/bin/$pkgname" <<LAUNCHER
+#!/bin/sh
+exec /opt/$pkgname/$pkgname "\$@"
+LAUNCHER
+
+  install -Dm644 "$srcdir/deepseek-harness-desktop.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+  install -Dm644 "$srcdir/linux-unpacked/resources/icon.png" "$pkgdir/usr/share/pixmaps/$pkgname.png"
+}

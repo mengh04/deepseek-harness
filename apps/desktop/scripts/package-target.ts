@@ -12,6 +12,7 @@ import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
 import { loadDesktopPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import { createPackagingRun } from './packaging-run.mjs'
+import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
 import { withMacOSSigningKeychain } from './macos-signing-keychain.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
@@ -31,14 +32,14 @@ const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
 ])
 
 /** Fixed platform and architecture identifiers exposed by package scripts. */
-export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64'
+export type DesktopPackageTargetName = 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-x64'
 
 /** One supported release target and its electron-builder selectors. */
 export interface DesktopPackageTarget {
   readonly name: DesktopPackageTargetName
-  readonly platform: 'darwin' | 'win32'
+  readonly platform: 'darwin' | 'win32' | 'linux'
   readonly arch: 'arm64' | 'x64'
-  readonly builderPlatform: '--mac' | '--win'
+  readonly builderPlatform: '--mac' | '--win' | '--linux'
   readonly builderArch: '--arm64' | '--x64'
 }
 
@@ -62,6 +63,13 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
     platform: 'win32',
     arch: 'x64',
     builderPlatform: '--win',
+    builderArch: '--x64',
+  },
+  'linux-x64': {
+    name: 'linux-x64',
+    platform: 'linux',
+    arch: 'x64',
+    builderPlatform: '--linux',
     builderArch: '--x64',
   },
 }
@@ -117,8 +125,16 @@ function packageVersion(path: string, label: string): string {
   return manifest.version
 }
 
+/** Narrow a package target to platforms that publish update feeds and release records. */
+function isRecordedPackageTarget(target: DesktopPackageTarget): target is DesktopPackageTarget & {
+  name: 'mac-arm64' | 'mac-x64' | 'win-x64'
+  platform: 'darwin' | 'win32'
+} {
+  return target.platform !== 'linux'
+}
+
 function writeReleaseRecord(
-  target: DesktopPackageTarget,
+  target: DesktopPackageTarget & { name: 'mac-arm64' | 'mac-x64' | 'win-x64'; platform: 'darwin' | 'win32' },
   environment: NodeJS.ProcessEnv,
   artifactsRoot: string,
 ): void {
@@ -158,6 +174,9 @@ export function resolveDesktopPackageTarget(
   const target = TARGETS[name]
   if (target.platform === 'win32' && (hostPlatform !== 'win32' || hostArch !== 'x64')) {
     throw new Error('desktop package: win-x64 requires a Windows x64 build host')
+  }
+  if (target.platform === 'linux' && (hostPlatform !== 'linux' || hostArch !== 'x64')) {
+    throw new Error('desktop package: linux-x64 requires a Linux x64 build host')
   }
   if (target.platform === 'darwin' && hostPlatform !== 'darwin') {
     throw new Error(`desktop package: ${name} requires a macOS build host`)
@@ -257,21 +276,18 @@ function runPnpm(
   cwd: string = APP_ROOT,
   run?: ReturnType<typeof createPackagingRun>,
 ): Promise<void> {
-  const pnpmEntry = process.env.npm_execpath
-  if (pnpmEntry === undefined || pnpmEntry === '') {
-    throw new Error('desktop package: invoke this script through a pnpm package command')
-  }
-  if (run !== undefined) return run.run(args.join(' '), process.execPath, [pnpmEntry, ...args], { cwd, env })
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [pnpmEntry, ...args], {
+  const invocation = pnpmInvocation([...args])
+  if (run !== undefined) return run.run(args.join(' '), invocation.command, [...invocation.args], { cwd, env })
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(invocation.command, [...invocation.args], {
       cwd,
       env,
       stdio: 'inherit',
     })
-    child.once('error', reject)
+    child.once('error', rejectPromise)
     child.once('close', (code, signal) => {
       if (code === 0) resolvePromise()
-      else reject(new Error(`desktop package: pnpm ${args.join(' ')} exited with ${String(code ?? signal)}`))
+      else rejectPromise(new Error(`desktop package: pnpm ${args.join(' ')} exited with ${String(code ?? signal)}`))
     })
   })
 }
@@ -316,8 +332,10 @@ export async function packageTarget(
   const { target } = invocation
   const execute = (args: readonly string[], env: NodeJS.ProcessEnv, cwd: string = APP_ROOT) => runPnpm(args, env, cwd, run)
   const buildPaths = desktopTargetBuildPaths(target.name)
-  const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
-  if (!invocation.prepareOnly && !invocation.unsigned) {
+  const releaseRecordPath = isRecordedPackageTarget(target)
+    ? join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
+    : undefined
+  if (releaseRecordPath !== undefined && !invocation.prepareOnly && !invocation.unsigned) {
     rmSync(releaseRecordPath, { force: true })
     rmSync(`${releaseRecordPath}.tmp`, { force: true })
   }
@@ -377,7 +395,10 @@ export async function packageTarget(
   } else {
     await execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv)
   }
-  if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
+  if (releaseRecordPath !== undefined && !invocation.directory && !invocation.unsigned
+    && isRecordedPackageTarget(target)) {
+    writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) await main()

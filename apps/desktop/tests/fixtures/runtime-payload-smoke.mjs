@@ -110,9 +110,22 @@ function checkKoffi() {
   }
 }
 
+/** Locate the standalone Node binary bundled outside Electron. */
+function standaloneNodeExecutable() {
+  return join(dirname(root), 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node')
+}
+
 /** Encode and decode a pixel through the packaged libvips binary. */
-async function checkSharp() {
-  const sharp = requireRuntime('sharp')
+function checkSharp() {
+  // Electron's Linux GUI stack loads the system glib; sharp's bundled libvips also carries glib.
+  // Calling both in one process can bind g_object_unref across incompatible builds and crash.
+  // The bundled standalone Node validates the packaged sharp payload without that loader collision.
+  const script = join(scratch, 'sharp-check.cjs')
+  writeFileSync(script, `
+const assert = require('node:assert/strict')
+const { createRequire } = require('node:module')
+async function main() {
+  const sharp = createRequire(${JSON.stringify(join(root, 'package.json'))})('sharp')
   const pixel = Buffer.from([17, 103, 231])
   const png = await sharp(pixel, { raw: { width: 1, height: 1, channels: 3 } }).png().toBuffer()
   const decoded = await sharp(png).raw().toBuffer({ resolveWithObject: true })
@@ -120,6 +133,13 @@ async function checkSharp() {
   assert.equal(decoded.info.height, 1)
   assert.equal(decoded.info.channels, 3)
   assert.deepEqual(decoded.data, pixel)
+}
+main().then(() => console.log('sharp-payload-ok')).catch(error => { console.error(error); process.exit(1) })
+`)
+  const output = execFileSync(standaloneNodeExecutable(), [script], {
+    encoding: 'utf8', timeout: 45_000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '', NODE_OPTIONS: '' },
+  })
+  assert.match(output, /sharp-payload-ok/u)
 }
 
 /** Exercise Domino parsing through the HTML converter and GFM plugin used by web_fetch. */
@@ -139,7 +159,7 @@ function checkHtml() {
 try {
   checkPnpm()
   checkKoffi()
-  await checkSharp()
+  checkSharp()
   checkHtml()
   await checkPty()
 } finally {

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DeepSeek Harness
+GenericName=Agent Harness
+Comment=All-plugin Cordis agent harness
+Exec=deepseek-harness-desktop %U
+Icon=deepseek-harness-desktop
+Categories=Development;Utility;
+Terminal=false
+StartupWMClass=deepseek-harness-desktop
