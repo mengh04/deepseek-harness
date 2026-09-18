@@ -1,17 +1,18 @@
-# Personal local package for DeepSeek Harness Desktop on Arch Linux x86_64.
-# Run ./build.sh from this directory after a successful package:desktop:linux:x64:dir build.
+# DeepSeek Harness Desktop — personal Arch package (mengh04's linux-x64 build).
+# Artifact source: https://github.com/mengh04/deepseek-harness/releases (tag desktop-$pkgver)
+# Friends: put this file in an empty dir and run: makepkg -si
 pkgname=deepseek-harness-desktop
 pkgver=0.1.6.alpha.2
 pkgrel=1
 pkgdesc='All-plugin Cordis agent harness desktop application with bundled runtime'
 arch=(x86_64)
-url=https://github.com/deepseek-ai/deepseek-harness
+url=https://github.com/mengh04/deepseek-harness
 license=(MIT)
 depends=(gtk3 nss alsa-lib libcups dbus libdrm mesa libxkbcommon libxcomposite libxdamage libxrandr libxss)
 options=(!strip)
 _tarname="$pkgname-$pkgver.tar.zst"
-source=("$_tarname" "deepseek-harness-desktop.desktop")
-sha256sums=($(sha256sum "$_tarname" | awk '{print $1}') SKIP)
+source=("https://github.com/mengh04/deepseek-harness/releases/download/desktop-$pkgver/$_tarname")
+sha256sums=('ef619dabc06a925f9300a22d1a8f36d5a105eeca8e31463c1954d912bb03c1ff')
 
 package() {
   install -dm755 "$pkgdir/opt/$pkgname"
